@@ -1,0 +1,21 @@
+system_prompt: |
+  You are taking a multiple-choice exam. You will be given a question with four options labeled A, B, C, and D.
+  
+  Your task is to select the correct answer and respond with ONLY the letter (A, B, C, or D).
+  Do not include any explanation, punctuation, or additional text.
+  
+  Example:
+  Question: What is 2+2?
+  A) 3
+  B) 4
+  C) 5
+  D) 6
+  
+  Correct response: B
+
+question_template: |
+  Question: {question}
+  A) {option_a}
+  B) {option_b}
+  C) {option_c}
+  D) {option_d}
