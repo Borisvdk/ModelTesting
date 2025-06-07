@@ -132,11 +132,11 @@ def setup_sidebar():
         st.subheader("📚 Exam Selection")
         exam_source = st.radio(
             "Choose exam source:",
-            ["Default Exam", "Upload Custom"],
+            ["CCZT Exam", "Upload Custom"],
             index=0 if st.session_state.exam_source == 'default' else 1
         )
 
-        if exam_source == "Default Exam":
+        if exam_source == "CCZT Exam":
             st.session_state.exam_source = 'default'
             # Load default exam automatically
             load_default_exam()
