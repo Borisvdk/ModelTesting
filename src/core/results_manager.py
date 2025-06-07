@@ -2,8 +2,9 @@ import json
 import os
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import logging
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -100,4 +101,114 @@ class ResultsManager:
             }).round(2)
             stats.columns = ['avg_score', 'std_score', 'test_count', 'avg_response_time']
             return stats.reset_index()
+        return None
+
+    @classmethod
+    def get_leaderboard(cls) -> Optional[pd.DataFrame]:
+        """Get model leaderboard ranked by performance"""
+        model_stats = cls.get_model_statistics()
+        if model_stats is not None:
+            # Calculate combined score (70% accuracy, 30% speed)
+            # Normalize response time (inverse, so faster is better)
+            max_time = model_stats['avg_response_time'].max()
+            model_stats['speed_score'] = (max_time - model_stats['avg_response_time']) / max_time * 100
+
+            # Combined score
+            model_stats['combined_score'] = (
+                    model_stats['avg_score'] * 0.7 +
+                    model_stats['speed_score'] * 0.3
+            ).round(2)
+
+            # Add rank
+            model_stats['rank'] = model_stats['combined_score'].rank(ascending=False, method='min').astype(int)
+
+            # Sort by rank
+            leaderboard = model_stats.sort_values('rank')
+
+            return leaderboard[['rank', 'model', 'avg_score', 'avg_response_time',
+                                'combined_score', 'test_count']]
+        return None
+
+    @classmethod
+    def get_question_analytics(cls) -> Optional[pd.DataFrame]:
+        """Analyze performance by question across all tests"""
+        question_stats = defaultdict(lambda: {
+            'total_attempts': 0,
+            'correct_count': 0,
+            'total_response_time': 0,
+            'models_attempted': set(),
+            'question_text': '',
+            'wrong_answers': defaultdict(int)
+        })
+
+        # Load all test results
+        if not os.path.exists(cls.RESPONSES_DIR):
+            return None
+
+        for filename in os.listdir(cls.RESPONSES_DIR):
+            if filename.endswith('.json'):
+                filepath = os.path.join(cls.RESPONSES_DIR, filename)
+                with open(filepath, 'r') as f:
+                    test_data = json.load(f)
+
+                for result in test_data['results']:
+                    q_id = result['question_id']
+                    stats = question_stats[q_id]
+
+                    stats['total_attempts'] += 1
+                    stats['correct_count'] += int(result['is_correct'])
+                    stats['total_response_time'] += result['response_time']
+                    stats['models_attempted'].add(test_data['model'])
+                    stats['question_text'] = result['question']
+
+                    if not result['is_correct'] and result['extracted_answer']:
+                        stats['wrong_answers'][result['extracted_answer']] += 1
+
+        # Convert to DataFrame
+        if question_stats:
+            data = []
+            for q_id, stats in question_stats.items():
+                success_rate = (stats['correct_count'] / stats['total_attempts'] * 100) if stats[
+                                                                                               'total_attempts'] > 0 else 0
+                avg_time = stats['total_response_time'] / stats['total_attempts'] if stats['total_attempts'] > 0 else 0
+
+                # Determine difficulty
+                if success_rate >= 80:
+                    difficulty = "Easy"
+                elif success_rate >= 50:
+                    difficulty = "Medium"
+                else:
+                    difficulty = "Hard"
+
+                # Most common wrong answer
+                if stats['wrong_answers']:
+                    most_common_wrong = max(stats['wrong_answers'].items(), key=lambda x: x[1])
+                    common_mistake = f"{most_common_wrong[0]} ({most_common_wrong[1]} times)"
+                else:
+                    common_mistake = "N/A"
+
+                data.append({
+                    'question_id': q_id,
+                    'question': stats['question_text'][:50] + '...' if len(stats['question_text']) > 50 else stats[
+                        'question_text'],
+                    'success_rate': round(success_rate, 1),
+                    'difficulty': difficulty,
+                    'attempts': stats['total_attempts'],
+                    'avg_response_time': round(avg_time, 2),
+                    'models_tested': len(stats['models_attempted']),
+                    'common_mistake': common_mistake
+                })
+
+            df = pd.DataFrame(data)
+            return df.sort_values('success_rate', ascending=True)
+
+        return None
+
+    @classmethod
+    def get_recent_tests(cls, limit: int = 10) -> Optional[pd.DataFrame]:
+        """Get most recent test results"""
+        scores_df = cls.load_all_scores()
+        if scores_df is not None and not scores_df.empty:
+            scores_df['timestamp'] = pd.to_datetime(scores_df['timestamp'])
+            return scores_df.sort_values('timestamp', ascending=False).head(limit)
         return None

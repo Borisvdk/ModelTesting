@@ -27,7 +27,7 @@ A streamlined testing framework for evaluating Local LLMs on multiple-choice exa
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/llm-exam-tester.git
+git clone https://github.com/Borisvdk/ModelTesting.git
 cd llm-exam-tester
 ```
 

@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,6 +8,8 @@ logger = logging.getLogger(__name__)
 
 class DataLoader:
     """Load and validate exam data from CSV files"""
+
+    DEFAULT_EXAM_PATH = "data/exams"
 
     @staticmethod
     def load_questions(file_path: str) -> Optional[pd.DataFrame]:
@@ -89,3 +91,49 @@ class DataLoader:
         except Exception as e:
             logger.error(f"Error validating data: {str(e)}")
             return False
+
+    @classmethod
+    def load_default_exam(cls) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        """Load the default exam from data/exams directory"""
+        questions_path = os.path.join(cls.DEFAULT_EXAM_PATH, "questions.csv")
+        answers_path = os.path.join(cls.DEFAULT_EXAM_PATH, "answers.csv")
+
+        if os.path.exists(questions_path) and os.path.exists(answers_path):
+            questions_df = cls.load_questions(questions_path)
+            answers_df = cls.load_answers(answers_path)
+
+            if questions_df is not None and answers_df is not None:
+                if cls.validate_data(questions_df, answers_df):
+                    logger.info("Successfully loaded default exam")
+                    return questions_df, answers_df
+
+        logger.warning("Default exam not found or invalid")
+        return None, None
+
+    @staticmethod
+    def get_available_exams(exam_dir: str = "data/exams") -> Dict[str, Dict[str, str]]:
+        """Get list of available exam files in the directory"""
+        exams = {}
+
+        if os.path.exists(exam_dir):
+            # Look for pairs of questions and answers files
+            for file in os.listdir(exam_dir):
+                if file.startswith("questions_") and file.endswith(".csv"):
+                    exam_name = file.replace("questions_", "").replace(".csv", "")
+                    answers_file = f"answers_{exam_name}.csv"
+
+                    if os.path.exists(os.path.join(exam_dir, answers_file)):
+                        exams[exam_name] = {
+                            "questions": os.path.join(exam_dir, file),
+                            "answers": os.path.join(exam_dir, answers_file)
+                        }
+
+            # Check for default exam
+            if os.path.exists(os.path.join(exam_dir, "questions.csv")) and \
+                    os.path.exists(os.path.join(exam_dir, "answers.csv")):
+                exams["default"] = {
+                    "questions": os.path.join(exam_dir, "questions.csv"),
+                    "answers": os.path.join(exam_dir, "answers.csv")
+                }
+
+        return exams
