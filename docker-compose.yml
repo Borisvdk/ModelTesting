@@ -1,0 +1,16 @@
+services:
+  llm-exam-tester:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    ports:
+      - "8501:8501"
+      - "11434:11434"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: bash -c "bash .devcontainer/post-create.sh && streamlit run src/ui/app.py --server.address 0.0.0.0"
+    environment:
+      - PYTHONUNBUFFERED=1
+    tty: true
+    stdin_open: true
