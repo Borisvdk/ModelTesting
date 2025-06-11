@@ -2,7 +2,7 @@ import json
 import os
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import logging
 from collections import defaultdict
 
@@ -212,3 +212,95 @@ class ResultsManager:
             scores_df['timestamp'] = pd.to_datetime(scores_df['timestamp'])
             return scores_df.sort_values('timestamp', ascending=False).head(limit)
         return None
+
+    @classmethod
+    def get_results_matrix(cls, mode: str = "latest") -> Optional[pd.DataFrame]:
+        """
+        Generate a matrix view of results for export.
+
+        Args:
+            mode: "latest" for most recent test per model, "all" for all tests
+
+        Returns:
+            DataFrame with models as rows and questions as columns
+        """
+        if not os.path.exists(cls.RESPONSES_DIR):
+            return None
+
+        # Collect all test results
+        all_results = []
+
+        for filename in os.listdir(cls.RESPONSES_DIR):
+            if filename.endswith('.json'):
+                filepath = os.path.join(cls.RESPONSES_DIR, filename)
+                with open(filepath, 'r') as f:
+                    test_data = json.load(f)
+
+                    # Create a row for this test
+                    row_data = {
+                        'model': test_data['model'],
+                        'test_id': test_data['test_id'],
+                        'timestamp': test_data['timestamp'],
+                        'total': test_data['summary']['correct_answers'],
+                        'total_questions': test_data['summary']['total_questions']
+                    }
+
+                    # Add question results
+                    question_results = {}
+                    for result in test_data['results']:
+                        # Extract question number from ID (e.g., Q001 -> 1)
+                        q_num = int(result['question_id'].replace('Q', ''))
+                        question_results[q_num] = 1 if result['is_correct'] else 0
+
+                    row_data['question_results'] = question_results
+                    all_results.append(row_data)
+
+        if not all_results:
+            return None
+
+        # Convert to DataFrame
+        df = pd.DataFrame(all_results)
+
+        # If mode is "latest", keep only most recent test per model
+        if mode == "latest":
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.sort_values('timestamp').groupby('model').last().reset_index()
+
+        # Find max question number
+        max_question = 0
+        for _, row in df.iterrows():
+            if row['question_results']:
+                max_question = max(max_question, max(row['question_results'].keys()))
+
+        # Create matrix format
+        matrix_data = []
+        for _, row in df.iterrows():
+            matrix_row = {
+                'Model': row['model'],
+                'Type': 'Lokaal',  # Local
+                'RAG': 'No',  # RAG support (future feature)
+                '1by1': 'Yes',  # Questions asked one by one
+                'Total': row['total']
+            }
+
+            # Add question columns
+            for i in range(1, max_question + 1):
+                matrix_row[str(i)] = row['question_results'].get(i, 0)
+
+            matrix_data.append(matrix_row)
+
+        matrix_df = pd.DataFrame(matrix_data)
+
+        # Sort by total score (descending)
+        matrix_df = matrix_df.sort_values('Total', ascending=False)
+
+        return matrix_df
+
+    @classmethod
+    def export_results_matrix(cls, filename: str, mode: str = "latest") -> bool:
+        """Export results in matrix format to CSV"""
+        matrix_df = cls.get_results_matrix(mode)
+        if matrix_df is not None:
+            matrix_df.to_csv(filename, index=False)
+            return True
+        return False

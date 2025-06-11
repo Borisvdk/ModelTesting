@@ -132,11 +132,11 @@ def setup_sidebar():
         st.subheader("📚 Exam Selection")
         exam_source = st.radio(
             "Choose exam source:",
-            ["CCZT Exam", "Upload Custom"],
+            ["Default Exam", "Upload Custom"],
             index=0 if st.session_state.exam_source == 'default' else 1
         )
 
-        if exam_source == "CCZT Exam":
+        if exam_source == "Default Exam":
             st.session_state.exam_source = 'default'
             # Load default exam automatically
             load_default_exam()
@@ -328,6 +328,46 @@ def display_current_results(test_data):
         avg_time = sum(r['response_time'] for r in test_data['results']) / len(test_data['results'])
         st.metric("Avg Response Time", f"{avg_time:.2f}s")
 
+    # Export options
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        # Export in matrix format
+        if st.button("📥 Export Matrix Format", key="export_current_matrix"):
+            # Create matrix format for current test
+            matrix_row = {
+                'Model': test_data['model'],
+                'Type': 'Lokaal',
+                'RAG': 'No',
+                '1by1': 'Yes',
+                'Total': correct
+            }
+
+            # Add question results
+            for idx, result in enumerate(test_data['results']):
+                q_num = int(result['question_id'].replace('Q', ''))
+                matrix_row[str(q_num)] = 1 if result['is_correct'] else 0
+
+            matrix_df = pd.DataFrame([matrix_row])
+            csv = matrix_df.to_csv(index=False)
+
+            st.download_button(
+                "Download Matrix",
+                csv,
+                f"test_matrix_{test_data['model']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "text/csv"
+            )
+
+    with col3:
+        # Export detailed results
+        results_df = pd.DataFrame(test_data['results'])
+        csv = results_df.to_csv(index=False)
+        st.download_button(
+            "📥 Export Details",
+            csv,
+            f"test_details_{test_data['model']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "text/csv"
+        )
+
     # Detailed results
     with st.expander("📋 Detailed Question Results", expanded=True):
         results_df = pd.DataFrame(test_data['results'])
@@ -352,15 +392,6 @@ def display_current_results(test_data):
                     width="large",
                 ),
             }
-        )
-
-        # Download button
-        csv = results_df.to_csv(index=False)
-        st.download_button(
-            "📥 Download Detailed Results",
-            csv,
-            f"test_results_{test_data['model']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            "text/csv"
         )
 
 
@@ -388,9 +419,34 @@ def show_leaderboard():
 
         st.divider()
 
-        # Full leaderboard table
-        st.subheader("📊 Complete Rankings")
+        # Export section
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.subheader("📊 Complete Rankings")
+        with col2:
+            # Export matrix format
+            if st.button("📥 Export Matrix (Latest)", help="Export in matrix format with 1/0 for each question"):
+                matrix_df = ResultsManager.get_results_matrix(mode="latest")
+                if matrix_df is not None:
+                    csv = matrix_df.to_csv(index=False)
+                    st.download_button(
+                        "Download Matrix CSV",
+                        csv,
+                        f"results_matrix_latest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        "text/csv"
+                    )
+        with col3:
+            # Export standard leaderboard
+            if st.button("📥 Export Leaderboard"):
+                csv = leaderboard.to_csv(index=False)
+                st.download_button(
+                    "Download Leaderboard",
+                    csv,
+                    f"leaderboard_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    "text/csv"
+                )
 
+        # Full leaderboard table
         display_df = leaderboard.copy()
         display_df['avg_score'] = display_df['avg_score'].round(1).astype(str) + '%'
         display_df['avg_response_time'] = display_df['avg_response_time'].round(2).astype(str) + 's'
@@ -442,6 +498,13 @@ def show_leaderboard():
             )
             fig.update_layout(height=400, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
+
+        # Show matrix preview
+        with st.expander("📋 Results Matrix Preview (Latest Test per Model)"):
+            matrix_df = ResultsManager.get_results_matrix(mode="latest")
+            if matrix_df is not None:
+                st.dataframe(matrix_df, use_container_width=True, height=300)
+                st.caption("Shows 1 for correct answers, 0 for incorrect answers")
 
     else:
         st.info("🏃 No test results yet. Run some tests to see the leaderboard!")
@@ -559,6 +622,31 @@ def show_history():
         # Convert timestamp
         scores_df['timestamp'] = pd.to_datetime(scores_df['timestamp'])
 
+        # Export buttons
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.subheader("📊 Performance Trends")
+        with col2:
+            if st.button("📥 Export All (Matrix)", help="Export all results in matrix format"):
+                matrix_df = ResultsManager.get_results_matrix(mode="all")
+                if matrix_df is not None:
+                    csv = matrix_df.to_csv(index=False)
+                    st.download_button(
+                        "Download Matrix (All)",
+                        csv,
+                        f"results_matrix_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        "text/csv"
+                    )
+        with col3:
+            if st.button("📥 Export History"):
+                csv = scores_df.to_csv(index=False)
+                st.download_button(
+                    "Download History",
+                    csv,
+                    f"test_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    "text/csv"
+                )
+
         # Performance over time
         fig = px.line(
             scores_df.sort_values('timestamp'),
@@ -593,14 +681,12 @@ def show_history():
             }
         )
 
-        # Download all results
-        csv = scores_df.to_csv(index=False)
-        st.download_button(
-            "📥 Download All Results",
-            csv,
-            f"all_test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            "text/csv"
-        )
+        # Matrix format preview
+        with st.expander("📋 All Results Matrix Preview"):
+            matrix_df = ResultsManager.get_results_matrix(mode="all")
+            if matrix_df is not None:
+                st.dataframe(matrix_df, use_container_width=True, height=400)
+                st.caption("Shows 1 for correct answers, 0 for incorrect. Each row is a test run.")
 
     else:
         st.info("📈 No test history yet. Start running tests to build your history!")
@@ -630,6 +716,7 @@ def show_about():
         2. **Select a Model**: Choose from any Ollama-compatible model
         3. **Run the Test**: The framework will query each question and record responses
         4. **Analyze Results**: View scores, response times, and detailed analytics
+        5. **Export Data**: Download results in standard CSV or matrix format
 
         ### 📊 Metrics Explained
 
@@ -638,12 +725,23 @@ def show_about():
         - **Combined Score**: Weighted score (70% accuracy, 30% speed)
         - **Difficulty Rating**: Based on success rate across all tests
 
+        ### 📋 Export Formats
+
+        **Standard CSV**: Detailed results with all metadata
+
+        **Matrix Format**: Compact view perfect for analysis
+        - Model name, Type (Lokaal), RAG (No), 1by1 (Yes), Total score
+        - Individual question results as 1 (correct) or 0 (incorrect)
+        - Easy to import into Excel for further analysis
+        - Ready for future features like RAG and batch testing
+
         ### 🚀 Tips for Best Results
 
         - Test multiple models to find the best balance of speed and accuracy
         - Run multiple tests to account for variability
         - Use consistent hardware for fair comparisons
         - Consider model size vs performance trade-offs
+        - Export to matrix format for cross-model analysis
         """)
 
     with col2:
@@ -673,6 +771,13 @@ def show_about():
 
         Found a bug or have a feature request? 
         Please open an issue on GitHub!
+
+        ### 🆕 What's New
+
+        - **Matrix Export**: Export results in a compact 1/0 format
+        - **Leaderboard**: See model rankings at a glance
+        - **Question Analytics**: Understand which questions are hardest
+        - **Docker Support**: One-command deployment
         """)
 
 
